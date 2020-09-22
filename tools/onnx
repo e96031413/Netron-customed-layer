@@ -1,0 +1,149 @@
+#!/bin/bash
+
+set -e
+pushd $(cd $(dirname ${0})/..; pwd) > /dev/null
+
+identifier=onnx
+
+case "${OSTYPE}" in
+    msys*) python="winpty python";;
+    *) python="python";;
+esac
+
+bold() {
+    echo "$(tty -s && tput bold)$1$(tty -s && tput sgr0)" 
+}
+
+venv() {
+    env_dir=./third_party/env/onnx
+    [ -d "${env_dir}" ] || ${python} -m venv ${env_dir}
+    case "${OSTYPE}" in
+        msys*) source ${env_dir}/Scripts/activate;;
+        *) source ${env_dir}/bin/activate;;
+    esac
+    ${python} -m pip install --quiet --upgrade pip
+}
+
+git_sync() {
+    [ -d "./third_party/source/${1}" ] || git clone --quiet --recursive ${2} "./third_party/source/${1}"
+    pushd "./third_party/source/${1}" > /dev/null
+    git pull --quiet --prune
+    git submodule sync --quiet
+    git submodule update --quiet --init --recursive
+    popd > /dev/null
+}
+
+clean() {
+    bold "onnx clean"
+    rm -rf "./third_party/env/onnx"
+    rm -rf "./third_party/source/onnx"
+    rm -rf "./third_party/source/onnxmltools"
+}
+
+sync() {
+    bold "onnx sync"
+    git_sync onnx https://github.com/onnx/onnx.git
+    git_sync onnxmltools https://github.com/onnx/onnxmltools.git
+}
+
+install() {
+    bold "onnx install"
+    case "${OSTYPE}" in
+        linux*)
+            [ -x "$(command -v cmake)" ] || sudo apt install -y cmake
+            [ -x "$(command -v protoc)" ] || sudo apt install -y protobuf-compiler libprotoc-dev
+            protobuf=protobuf
+            ;;
+        darwin*)
+            brew list cmake > /dev/null 2>&1 || brew install cmake > /dev/null
+            brew list protobuf > /dev/null 2>&1 || brew install protobuf > /dev/null
+            protobuf=protobuf
+            ;;
+        msys*)
+            [ ! -z "$(choco list --local-only --exacty --limit-output visualstudio2017-workload-vctools)" ] || $(choco install -yes visualstudio2017-workload-vctools) > /dev/null
+            protoc_version=3.9.x
+            protoc_dir="$(pwd)/third_party/bin/protobuf/v${protoc_version}"
+            programfiles_x86_dir=$(env | grep "^ProgramFiles(x86)=" | cut -d '=' -f 2)
+            cmake_dir="${programfiles_x86_dir}\Microsoft Visual Studio\2017\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
+            msbuild_dir="${programfiles_x86_dir}\Microsoft Visual Studio\2017\BuildTools\MSBuild\15.0\Bin"
+            if [ ! -f "${protoc_dir}/bin/protoc.exe" ]; then
+                rm -rf ${protoc_dir}
+                git clone --quiet --branch ${protoc_version} https://github.com/protocolbuffers/protobuf.git ${protoc_dir}/src
+                pushd "${protoc_dir}/src/cmake" > /dev/null
+                "${cmake_dir}\cmake.exe" -G "Visual Studio 15 2017 Win64" -Dprotobuf_MSVC_STATIC_RUNTIME=OFF -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX="..\.." > /dev/null
+                "${msbuild_dir}\MSBuild.exe" protobuf.sln //m //p:Configuration=Release > /dev/null
+                "${msbuild_dir}\MSBuild.exe" INSTALL.vcxproj //p:Configuration=Release > /dev/null
+                popd > /dev/null
+            fi
+            export PATH="${protoc_dir}\bin":"$(cygpath -u "${cmake_dir}")":${PATH}
+            export USE_MSVC_STATIC_RUNTIME=0
+            protobuf="protobuf==3.9.2"
+            ;;
+    esac
+    venv
+    ${python} -m pip install --quiet --upgrade ${protobuf}
+    export ONNX_ML=1
+    export ONNX_NAMESPACE=onnx
+    ${python} -m pip install --quiet "./third_party/source/onnx"
+    deactivate
+}
+
+schema() {
+    bold "onnx schema"
+    [[ $(grep -U $'\x0D' ./source/onnx-proto.js) ]] && crlf=1
+    node ./tools/protoc.js --text --root onnx --out ./source/onnx-proto.js --path ./third_party/source/onnx onnx/onnx-ml.proto onnx/onnx-operators-ml.proto
+    if [[ -n ${crlf} ]]; then
+        unix2dos --quiet --newfile ./source/onnx-proto.js ./source/onnx-proto.js
+    fi
+}
+
+metadata() {
+    bold "onnx metadata"
+    [[ $(grep -U $'\x0D' ./source/onnx-metadata.json) ]] && crlf=1
+    venv
+    export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    ${python} ./tools/onnx-script.py metadata
+    deactivate
+    if [[ -n ${crlf} ]]; then
+        unix2dos --quiet --newfile ./source/onnx-metadata.json ./source/onnx-metadata.json
+    fi
+}
+
+convert() {
+    bold "onnx convert"
+    venv
+    ${python} -m pip install --quiet ./third_party/source/onnxmltools
+    export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    ${python} ./tools/onnx-script.py convert ${1}
+    deactivate
+}
+
+infer() {
+    bold "onnx infer"
+    venv
+    export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    ${python} ./tools/onnx-script.py infer ${1}
+    deactivate
+}
+
+optimize() {
+    bold "onnx optimize"
+    venv
+    export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    ${python} ./tools/onnx-script.py optimize ${1}
+    deactivate
+}
+
+while [ "$#" != 0 ]; do
+    command="$1" && shift
+    case "${command}" in
+        "clean") clean;;
+        "sync") sync;;
+        "install") install;;
+        "schema") schema;;
+        "metadata") metadata;;
+        "convert") convert ${1} && shift;;
+        "infer") infer ${1} && shift;;
+        "optimize") optimize ${1} && shift;;
+    esac
+done

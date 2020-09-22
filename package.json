@@ -1,0 +1,46 @@
+{
+    "name": "netron",
+    "productName": "Netron",
+    "author": {
+        "name": "Lutz Roeder",
+        "email": "lutzroeder@users.noreply.github.com",
+        "url": "https://www.lutzroeder.com"
+    },
+    "version": "4.4.7",
+    "description": "Visualizer for neural network, deep learning and machine learning models",
+    "license": "MIT",
+    "repository": "lutzroeder/netron",
+    "main": "source/app.js",
+    "scripts": {
+        "postinstall": "electron-builder install-app-deps",
+        "start": "[ -d node_modules ] || npm install && npx electron .",
+        "server": "[ -d node_modules ] || npm install && python setup.py --quiet build && PYTHONPATH=./dist/lib python -c 'import netron; netron.main()' $@"
+    },
+    "dependencies": {
+        "d3": "5.16.0",
+        "dagre": "0.8.5",
+        "electron-updater": "4.3.4",
+        "marked": "1.1.1",
+        "pako": "1.0.11",
+        "universal-analytics": "0.4.23"
+    },
+    "devDependencies": {
+        "electron": "9.2.1",
+        "electron-builder": "^22.8.0",
+        "electron-notarize": "1.0.0",
+        "eslint": "7.7.0",
+        "xmldom": "0.3.0"
+    },
+    "build": {
+        "appId": "com.xxx.app",
+        "mac": {
+            "target": ["dmg","zip"]
+    },
+        "win": {
+            "target": ["nsis","zip"]
+        }
+    },
+        "scripts": {
+            "dist": "electron-builder --win --x64"
+    }
+}

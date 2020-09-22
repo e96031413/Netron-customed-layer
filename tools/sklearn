@@ -1,0 +1,69 @@
+#!/bin/bash
+
+set -e
+pushd $(cd $(dirname ${0})/..; pwd) > /dev/null
+
+case "${OSTYPE}" in
+    msys*) python="winpty python";;
+    *) python="python";;
+esac
+
+bold() {
+    echo "$(tty -s && tput bold)$1$(tty -s && tput sgr0)" 
+}
+
+venv() {
+    env_dir=./third_party/env/sklearn
+    [ -d "${env_dir}" ] || ${python} -m venv ${env_dir}
+    case "${OSTYPE}" in
+        msys*) source ${env_dir}/Scripts/activate;;
+        *) source ${env_dir}/bin/activate;;
+    esac
+    ${python} -m pip install --quiet --upgrade pip
+}
+
+clean() {
+    bold "sklearn clean"
+    rm -rf "./third_party/env/sklearn"
+}
+
+sync() {
+    bold "sklearn sync"
+    [ -d "./third_party/source/sklearn" ] || git clone --quiet --recursive "https://github.com/scikit-learn/scikit-learn.git" "./third_party/source/sklearn"
+    pushd "./third_party/source/sklearn" > /dev/null
+    git pull --quiet --prune
+    git submodule sync --quiet
+    git submodule update --quiet --init --recursive
+    popd > /dev/null
+}
+
+install() {
+    bold "sklearn install"
+    venv
+    ${python} -m pip install --quiet --use-feature=2020-resolver six cython pytest flake8 numpy scipy pylint astroid
+    ${python} -m pip install --quiet --use-feature=2020-resolver --pre --extra-index https://pypi.anaconda.org/scipy-wheels-nightly/simple scikit-learn
+    # ${python} -m pip install --quiet ./third_party/source/sklearn
+    deactivate
+}
+
+metadata() {
+    bold "sklearn metadata"
+    [[ $(grep -U $'\x0D' ./source/sklearn-metadata.json) ]] && crlf=1
+    venv
+    export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    ${python} ./tools/sklearn-script.py
+    deactivate
+    if [[ -n ${crlf} ]]; then
+        unix2dos --quiet --newfile ./source/sklearn-metadata.json ./source/sklearn-metadata.json
+    fi
+}
+
+while [ "$#" != 0 ]; do
+    command="$1" && shift
+    case "${command}" in
+        "clean") clean;;
+        "sync") sync;;
+        "install") install;;
+        "metadata") metadata;;
+    esac
+done

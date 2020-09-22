@@ -1,0 +1,25 @@
+{
+    "env": {
+        "es6": true,
+        "browser": true,
+        "node": true
+    },
+    "extends": "eslint:recommended",
+    "parserOptions": {
+        "ecmaVersion": 2015,
+        "sourceType": "module"
+    },
+    "rules": {
+        "brace-style": [ "error", "stroustrup", { "allowSingleLine": true } ],
+        "indent": [ "error", 4, { "SwitchCase": 1 } ],
+        "linebreak-style": "off",
+        "no-unused-vars": 0,
+        "no-trailing-spaces": "error",
+        "prefer-const": ["error", { "destructuring": "all" } ],
+        "semi": [ "error", "always" ]
+    },
+    "globals": {
+        "flatbuffers": "readonly",
+        "protobuf": "readonly"
+    }
+}
